@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# PWA: salida del Service Worker en modo dev (vite-plugin-pwa)
+dev-dist
+
+# Variables de entorno con secretos (Supabase keys, credenciales de tests, etc.)
+.env
+.env.*
+!.env.example
+
+# Supabase CLI: estado local con tokens y refs del proyecto
+.supabase/
+supabase/.temp/
+supabase/.branches/
+
+# Resultados de Playwright (pueden contener trazas/screenshots con datos sensibles)
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Configuración local de Claude Code
+.claude/settings.local.json
+
+# Volcados temporales de Playwright MCP
+.playwright-mcp/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
