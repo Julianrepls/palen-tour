@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
+import { recordVisitOncePerSession } from './lib/analytics';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -15,6 +17,10 @@ import ResetPassword from './pages/ResetPassword';
 import ForgotPassword from './pages/ForgotPassword';
 
 export default function App() {
+  useEffect(() => {
+    recordVisitOncePerSession();
+  }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>

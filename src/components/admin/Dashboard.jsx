@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, Users, Calendar, MapPin, CheckCircle, Clock, X, Mail, Phone, StickyNote } from 'lucide-react';
+import { ChevronDown, Users, Calendar, MapPin, CheckCircle, Clock, X, Mail, Phone, StickyNote, Eye } from 'lucide-react';
 import { supabase, TRIP_VIEW_SELECT, TRIPS_VIEW } from '../../lib/supabase';
 
 const statusMeta = {
@@ -11,19 +11,22 @@ const statusMeta = {
 export default function Dashboard() {
   const [trips, setTrips] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [visits, setVisits] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(new Set());
 
   useEffect(() => {
     (async () => {
-      const [{ data: t }, { data: b }] = await Promise.all([
+      const [{ data: t }, { data: b }, { data: v }] = await Promise.all([
         supabase.from(TRIPS_VIEW).select(TRIP_VIEW_SELECT).order('date', { ascending: true }),
         supabase.from('bookings')
           .select('id, trip_id, name, email, phone, people, notes, status, registered_at')
           .order('registered_at', { ascending: false }),
+        supabase.rpc('get_visit_stats'),
       ]);
       setTrips(t || []);
       setBookings(b || []);
+      setVisits(v || null);
       setLoading(false);
     })();
   }, []);
@@ -64,6 +67,22 @@ export default function Dashboard() {
 
   return (
     <div>
+      {/* Visitas a la web (solo visible para el admin) */}
+      {visits && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Eye className="w-4 h-4 text-primary-600" />
+            <h3 className="font-bold text-gray-900 text-sm">Visitas a la web</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <VisitStat label="Total" value={visits.total} color="text-primary-700" />
+            <VisitStat label="Hoy" value={visits.today} color="text-green-600" />
+            <VisitStat label="Últimos 7 días" value={visits.last_7_days} color="text-blue-600" />
+            <VisitStat label="Últimos 30 días" value={visits.last_30_days} color="text-purple-600" />
+          </div>
+        </div>
+      )}
+
       {/* Global stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <StatCard label="Viajes activos" value={trips.length} color="text-primary-700" />
@@ -181,6 +200,15 @@ export default function Dashboard() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function VisitStat({ label, value, color }) {
+  return (
+    <div className="text-center">
+      <div className={`text-3xl font-extrabold ${color}`}>{value ?? 0}</div>
+      <div className="text-xs text-gray-400 mt-1">{label}</div>
     </div>
   );
 }
