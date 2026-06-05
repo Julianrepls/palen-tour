@@ -105,6 +105,12 @@ export default function Login() {
             Recupérala
           </Link>
         </p>
+        <p className="text-sm text-gray-500 text-center mt-2">
+          ¿No tienes cuenta?{' '}
+          <Link to="/registro" className="text-primary-700 font-semibold">
+            Regístrate
+          </Link>
+        </p>
       </div>
     </div>
   );

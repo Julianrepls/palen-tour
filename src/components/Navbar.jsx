@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Mountain, User, LogOut, LayoutDashboard, ChevronDown } from 'lucide-react';
+import { Menu, X, Mountain, User, UserPlus, LogOut, LayoutDashboard, ChevronDown } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 
 export default function Navbar() {
@@ -131,13 +131,22 @@ export default function Navbar() {
                 )}
               </div>
             ) : (
-              <Link
-                to="/login"
-                className="flex items-center gap-2 bg-primary-600 text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-700 transition-colors"
-              >
-                <User className="w-4 h-4" />
-                Entrar
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/registro"
+                  className="flex items-center gap-2 border border-primary-600 text-primary-700 text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-50 transition-colors"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Registrarse
+                </Link>
+                <Link
+                  to="/login"
+                  className="flex items-center gap-2 bg-primary-600 text-white text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-700 transition-colors"
+                >
+                  <User className="w-4 h-4" />
+                  Entrar
+                </Link>
+              </div>
             )}
           </div>
 
@@ -202,13 +211,23 @@ export default function Navbar() {
               </button>
             </div>
           ) : (
-            <Link
-              to="/login"
-              onClick={() => setOpen(false)}
-              className="block bg-primary-600 text-white text-center text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-700 transition-colors"
-            >
-              Entrar
-            </Link>
+            <div className="pt-3 border-t border-gray-100 space-y-2">
+              <Link
+                to="/registro"
+                onClick={() => setOpen(false)}
+                className="flex items-center justify-center gap-2 border border-primary-600 text-primary-700 text-center text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-50 transition-colors"
+              >
+                <UserPlus className="w-4 h-4" />
+                Registrarse
+              </Link>
+              <Link
+                to="/login"
+                onClick={() => setOpen(false)}
+                className="block bg-primary-600 text-white text-center text-sm font-semibold px-4 py-2 rounded-full hover:bg-primary-700 transition-colors"
+              >
+                Entrar
+              </Link>
+            </div>
           )}
         </div>
       )}

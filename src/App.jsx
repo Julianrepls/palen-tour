@@ -12,6 +12,7 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import MyAccount from './pages/MyAccount';
 import ResetPassword from './pages/ResetPassword';
 import ForgotPassword from './pages/ForgotPassword';
@@ -26,6 +27,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/registro" element={<Register />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
 
