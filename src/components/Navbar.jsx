@@ -3,6 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, Mountain, User, UserPlus, LogOut, LayoutDashboard, ChevronDown } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 
+// Dashboard RAG (Streamlit). Configurable via VITE_RAG_URL; por defecto el servidor local.
+const RAG_URL = import.meta.env.VITE_RAG_URL || 'http://localhost:8501';
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -74,6 +77,15 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
+
+            <a
+              href={RAG_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium transition-colors text-gray-600 hover:text-primary-700"
+            >
+              Preguntas
+            </a>
 
             {isAuthenticated ? (
               <div className="relative" ref={menuRef}>
@@ -174,6 +186,16 @@ export default function Navbar() {
               {l.label}
             </Link>
           ))}
+
+          <a
+            href={RAG_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className="block py-2 text-sm font-medium text-gray-600"
+          >
+            Preguntas
+          </a>
 
           {isAuthenticated ? (
             <div className="pt-3 border-t border-gray-100 space-y-2">

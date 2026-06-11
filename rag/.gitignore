@@ -1,0 +1,7 @@
+.env
+media/
+manifest.json
+corpus/*
+!corpus/.gitkeep
+__pycache__/
+.venv/
