@@ -10,6 +10,18 @@ import rag_core as rag
 
 st.set_page_config(page_title="palen-tour · RAG", page_icon="🏔️", layout="wide")
 
+# Oculta la barra superior de Streamlit (boton "Deploy" y menu de tres puntos)
+st.markdown(
+    """
+    <style>
+      [data-testid="stToolbar"] {display: none !important;}
+      [data-testid="stDeployButton"] {display: none !important;}
+      #MainMenu {visibility: hidden !important;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # --- Estado ---------------------------------------------------------------
 if "history" not in st.session_state:
     st.session_state.history = []  # [{role, content, sources}]
