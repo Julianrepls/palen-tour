@@ -2,8 +2,6 @@
 
 Ejecutar:  streamlit run app.py
 """
-from pathlib import Path
-
 import streamlit as st
 
 import rag_core as rag
@@ -26,7 +24,7 @@ st.markdown(
 if "history" not in st.session_state:
     st.session_state.history = []  # [{role, content, sources}]
 
-# --- Barra lateral: corpus e indexacion -----------------------------------
+# --- Barra lateral --------------------------------------------------------
 with st.sidebar:
     st.header("📚 RAG Documentos Chat")
     st.caption(
@@ -34,23 +32,25 @@ with st.sidebar:
         "o Fiordos Noruegos. Por ejemplo: Rutas, Gastronomía, Fauna..."
     )
 
-    stats = rag.corpus_stats()
-    c1, c2 = st.columns(2)
-    c1.metric("Archivos", stats["archivos"])
-    c2.metric("Indexados", stats["indexados"])
+    # Controles de indexacion: solo en modo admin (RAG_ADMIN). El publico no los ve.
+    if rag.ADMIN:
+        stats = rag.corpus_stats()
+        c1, c2 = st.columns(2)
+        c1.metric("Archivos", stats["archivos"])
+        c2.metric("Indexados", stats["indexados"])
 
-    if st.button("🔄 Indexar corpus", use_container_width=True, type="primary"):
-        bar = st.progress(0.0, "Iniciando…")
-        try:
-            summary = rag.ingest(progress=lambda f, m: bar.progress(f, m))
-            st.success(
-                f"✅ {summary['indexados']} archivo(s) · {summary['vectores']} vectores "
-                f"· {summary['omitidos']} sin cambios"
-            )
-        except Exception as e:  # noqa: BLE001
-            st.error(f"Error indexando: {e}")
+        if st.button("🔄 Indexar corpus", use_container_width=True, type="primary"):
+            bar = st.progress(0.0, "Iniciando…")
+            try:
+                s = rag.ingest(progress=lambda f, m: bar.progress(f, m))
+                st.success(
+                    f"✅ {s['indexados']} indexado(s) · {s['vectores']} vectores "
+                    f"· {s['omitidos']} sin cambios · {s['eliminados']} eliminado(s)"
+                )
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Error indexando: {e}")
+        st.divider()
 
-    st.divider()
     top_k = st.slider("Fuentes a recuperar", 2, 10, 5)
     if st.button("🗑️ Limpiar chat", use_container_width=True):
         st.session_state.history = []
@@ -58,7 +58,8 @@ with st.sidebar:
 
 st.title("🏔️ Asistente documental palen-tour")
 
-# --- Historial ------------------------------------------------------------
+
+# --- Render de fuentes (con imagen de la pagina original) -----------------
 def render_sources(sources):
     if not sources:
         return
@@ -67,9 +68,9 @@ def render_sources(sources):
         meta = m["metadata"]
         label = f"📄 {meta['source']} · pág. {meta['page']} · relevancia {m['score']:.2f}"
         with st.expander(label):
-            img = meta.get("image_path")
-            if img and Path(img).exists():
-                st.image(img, caption=f"{meta['source']} — pág. {meta['page']}", width="stretch")
+            url = meta.get("image_url")
+            if url:
+                st.image(url, caption=f"{meta['source']} — pág. {meta['page']}", width="stretch")
             if meta.get("text"):
                 st.caption(meta["text"])
 
@@ -90,10 +91,9 @@ if prompt := st.chat_input("Pregunta sobre tus documentos…"):
         with st.spinner("Buscando en el corpus…"):
             try:
                 matches = rag.search(prompt, top_k=top_k)
-                if not matches:
-                    text = "No encuentro nada indexado. Pulsa **Indexar corpus** en la barra lateral."
-                else:
-                    text = rag.answer(prompt, matches)
+                text = rag.answer(prompt, matches) if matches else (
+                    "Todavía no hay documentos indexados."
+                )
             except Exception as e:  # noqa: BLE001
                 matches, text = [], f"⚠️ Error: {e}"
         st.markdown(text)

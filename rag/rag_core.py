@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import mimetypes
 import os
 import time
 from pathlib import Path
@@ -22,6 +21,18 @@ from pinecone import Pinecone, ServerlessSpec
 
 load_dotenv(Path(__file__).parent / ".env")
 
+
+def cfg(name: str, default=None):
+    """Lee credenciales de st.secrets (Streamlit Cloud) o variables de entorno (.env local)."""
+    try:
+        import streamlit as st
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:  # noqa: BLE001 -- sin secrets.toml en local
+        pass
+    return os.getenv(name, default)
+
+
 # --- Rutas ----------------------------------------------------------------
 ROOT = Path(__file__).parent
 CORPUS_DIR = ROOT / "corpus"            # <-- suelta aqui tus documentos
@@ -31,10 +42,20 @@ CORPUS_DIR.mkdir(exist_ok=True)
 MEDIA_DIR.mkdir(exist_ok=True)
 
 # --- Config ---------------------------------------------------------------
-EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-2")
-EMBED_DIM = int(os.getenv("EMBED_DIM", "1536"))
-GEN_MODEL = os.getenv("GEN_MODEL", "gemini-2.5-flash")
-INDEX_NAME = os.getenv("PINECONE_INDEX", "palen-tour-rag")
+EMBED_MODEL = cfg("EMBED_MODEL", "gemini-embedding-2")
+EMBED_DIM = int(cfg("EMBED_DIM", "1536"))
+GEN_MODEL = cfg("GEN_MODEL", "gemini-2.5-flash")
+INDEX_NAME = cfg("PINECONE_INDEX", "palen-tour-rag")
+
+# Supabase Storage: aloja las imagenes de las paginas fuente (bucket publico).
+# Solo se necesita SERVICE_KEY al indexar (local); la app en la nube solo lee URLs.
+SUPABASE_URL = cfg("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = cfg("SUPABASE_SERVICE_KEY")
+RAG_BUCKET = cfg("RAG_BUCKET", "rag-media")
+
+# Modo administrador: muestra los controles de indexacion en la barra lateral.
+# En produccion (publico) se deja sin definir -> solo se ve el chat.
+ADMIN = str(cfg("RAG_ADMIN", "")).lower() in ("1", "true", "yes")
 
 PDF_DPI = 150
 PAGE_TEXT_CHARS = 1500   # texto guardado por pagina en metadata
@@ -47,19 +68,20 @@ TEXT_EXT = {".txt", ".md"}
 # --- Clientes (perezosos) -------------------------------------------------
 _genai = None
 _index = None
+_supabase = None
 
 
 def genai_client():
     global _genai
     if _genai is None:
-        _genai = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        _genai = genai.Client(api_key=cfg("GOOGLE_API_KEY"))
     return _genai
 
 
 def index():
     global _index
     if _index is None:
-        pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+        pc = Pinecone(api_key=cfg("PINECONE_API_KEY"))
         existing = {i["name"] for i in pc.list_indexes()}
         if INDEX_NAME not in existing:
             pc.create_index(
@@ -67,12 +89,38 @@ def index():
                 dimension=EMBED_DIM,
                 metric="cosine",
                 spec=ServerlessSpec(
-                    cloud=os.getenv("PINECONE_CLOUD", "aws"),
-                    region=os.getenv("PINECONE_REGION", "us-east-1"),
+                    cloud=cfg("PINECONE_CLOUD", "aws"),
+                    region=cfg("PINECONE_REGION", "us-east-1"),
                 ),
             )
         _index = pc.Index(INDEX_NAME)
     return _index
+
+
+def _supabase_client():
+    global _supabase
+    if _supabase is None:
+        from supabase import create_client
+        if not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
+            raise RuntimeError(
+                "Faltan SUPABASE_URL / SUPABASE_SERVICE_KEY para subir imagenes a Storage."
+            )
+        _supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        try:  # crea el bucket publico la primera vez (idempotente)
+            _supabase.storage.create_bucket(RAG_BUCKET, options={"public": True})
+        except Exception:  # noqa: BLE001 -- ya existe
+            pass
+    return _supabase
+
+
+def _upload_image(data: bytes, key: str) -> str:
+    """Sube un PNG al bucket publico y devuelve su URL publica."""
+    sb = _supabase_client()
+    sb.storage.from_(RAG_BUCKET).upload(
+        path=key, file=data,
+        file_options={"content-type": "image/png", "upsert": "true"},
+    )
+    return sb.storage.from_(RAG_BUCKET).get_public_url(key)
 
 
 # --- Reintentos ante errores transitorios de la API -----------------------
@@ -111,9 +159,15 @@ def embed(contents) -> list[float]:
     return _normalize(res.embeddings[0].values)
 
 
-def _img_part(path: Path) -> types.Part:
-    mime = mimetypes.guess_type(str(path))[0] or "image/png"
-    return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
+def _img_part(data: bytes, mime: str = "image/png") -> types.Part:
+    return types.Part.from_bytes(data=data, mime_type=mime)
+
+
+def _img_part_from_url(url: str) -> types.Part:
+    import httpx
+    r = httpx.get(url, timeout=20)
+    r.raise_for_status()
+    return _img_part(r.content, r.headers.get("content-type", "image/png"))
 
 
 # --- Manifest -------------------------------------------------------------
@@ -131,22 +185,20 @@ def _file_hash(path: Path) -> str:
 
 # --- Ingesta --------------------------------------------------------------
 def _records_from_pdf(path: Path, fh: str):
-    """Una entrada por pagina: texto extraido + imagen renderizada."""
+    """Una entrada por pagina: texto extraido + imagen renderizada (subida a Storage)."""
     doc = fitz.open(path)
-    out_dir = MEDIA_DIR / fh
-    out_dir.mkdir(exist_ok=True)
     for i, page in enumerate(doc, start=1):
         text = page.get_text().strip()
-        img_path = out_dir / f"p{i}.png"
-        page.get_pixmap(dpi=PDF_DPI).save(img_path)
-        contents = [f"Documento: {path.name} | Pagina {i}\n{text}", _img_part(img_path)]
+        png = page.get_pixmap(dpi=PDF_DPI).tobytes("png")
+        url = _upload_image(png, f"{fh}/p{i}.png")
+        contents = [f"Documento: {path.name} | Pagina {i}\n{text}", _img_part(png)]
         yield {
             "id": f"{fh}:{i}",
             "contents": contents,
             "metadata": {
                 "source": path.name,
                 "page": i,
-                "image_path": str(img_path),
+                "image_url": url,
                 "text": text[:PAGE_TEXT_CHARS],
             },
         }
@@ -154,13 +206,15 @@ def _records_from_pdf(path: Path, fh: str):
 
 
 def _records_from_image(path: Path, fh: str):
+    data = path.read_bytes()
+    url = _upload_image(data, f"{fh}/{path.name}")
     yield {
         "id": f"{fh}:1",
-        "contents": [f"Imagen: {path.name}", _img_part(path)],
+        "contents": [f"Imagen: {path.name}", _img_part(data)],
         "metadata": {
             "source": path.name,
             "page": 1,
-            "image_path": str(path),
+            "image_url": url,
             "text": f"(Imagen) {path.name}",
         },
     }
@@ -176,7 +230,7 @@ def _records_from_text(path: Path, fh: str):
             "metadata": {
                 "source": path.name,
                 "page": i,
-                "image_path": "",
+                "image_url": "",
                 "text": chunk[:PAGE_TEXT_CHARS],
             },
         }
@@ -201,8 +255,17 @@ def ingest(progress=None):
     """
     manifest = _load_manifest()
     files = [p for p in CORPUS_DIR.rglob("*") if p.is_file() and not p.name.startswith(".")]
-    indexed, vectors, skipped = 0, 0, 0
+    indexed, vectors, skipped, removed = 0, 0, 0, 0
     idx = index()
+
+    # Poda: borra de Pinecone los documentos que ya no estan en corpus/
+    present = {str(p.relative_to(CORPUS_DIR)) for p in files}
+    for key in [k for k in manifest if k not in present]:
+        ids = manifest[key].get("ids", [])
+        if ids:
+            idx.delete(ids=ids)
+        del manifest[key]
+        removed += 1
 
     for n, path in enumerate(files):
         key = str(path.relative_to(CORPUS_DIR))
@@ -240,7 +303,7 @@ def ingest(progress=None):
     _save_manifest(manifest)
     if progress:
         progress(1.0, "Listo")
-    return {"indexados": indexed, "vectores": vectors, "omitidos": skipped}
+    return {"indexados": indexed, "vectores": vectors, "omitidos": skipped, "eliminados": removed}
 
 
 # --- Busqueda y respuesta -------------------------------------------------
@@ -266,9 +329,12 @@ def answer(query: str, matches) -> str:
     contents = [f"{SYSTEM}\n\n### CONTEXTO\n{ctx}\n\n### PREGUNTA\n{query}"]
     # Adjunta las imagenes de las fuentes para que el modelo lea manuales visuales
     for m in matches:
-        p = m["metadata"].get("image_path")
-        if p and Path(p).exists():
-            contents.append(_img_part(Path(p)))
+        url = m["metadata"].get("image_url")
+        if url:
+            try:
+                contents.append(_img_part_from_url(url))
+            except Exception:  # noqa: BLE001 -- si falla la descarga, sigue solo con texto
+                pass
     res = _retry(lambda: genai_client().models.generate_content(
         model=GEN_MODEL, contents=contents))
     return res.text
